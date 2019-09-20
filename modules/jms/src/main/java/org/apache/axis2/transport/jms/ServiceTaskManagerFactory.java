@@ -132,9 +132,13 @@ public class ServiceTaskManagerFactory {
             stm.setReconnectionProgressionFactor(dValue);
         }
 
-        value = getOptionalIntProperty(JMSConstants.JMS_PROXY_THROTTLE_PER_MIN, svc, cf);
+        value = getOptionalIntProperty(JMSConstants.JMS_PROXY_THROTTLE_MESSAGE_LIMIT, svc, cf);
         if (value != null) {
-            stm.setThrottleLimitPerMin(value);
+            stm.setThrottleMessageLimit(value);
+        }
+        Long lvalue = getOptionalLongProperty(JMSConstants.JMS_PROXY_THROTTLE_DURATION, svc, cf);
+        if (lvalue != null) {
+            stm.setThrottleDuration(lvalue);
         }
         Boolean bValue = getOptionalBooleanProperty(JMSConstants.JMS_PROXY_THROTTLE_ENABLED, svc, cf);
         if (bValue != null) {

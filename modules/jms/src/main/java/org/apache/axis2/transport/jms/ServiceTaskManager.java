@@ -191,8 +191,10 @@ public class ServiceTaskManager {
     private boolean isThrottlingEnabled = false;
     // Checking whether throttling is Fixed-Interval mode or Batch mode for JMS Proxy, By default Fixed-Interval is enabled
     private String throttleMode = JMSConstants.JMS_PROXY_FIXED_INTERVAL_THROTTLE;
-    // Throttle limit if throttling is enabled. 1 message per second
-    private int throttleLimitPerMin = 60;
+    // Throttle Message Limit if throttling is enabled.
+    private int throttleMessageLimit = 60;
+    //Throttle duration
+    private long throttleDuration = DateUtils.MILLIS_PER_MINUTE; //60000 millis in one min
 
      /**
      * Start or re-start the Task Manager by shutting down any existing worker tasks and
@@ -457,8 +459,8 @@ public class ServiceTaskManager {
             activeTaskCount.getAndIncrement();
             int messageCount = 0;
             long retryDurationOnConsumerFailure = consumeErrorRetryDelay;
-            int consumedMessageCountPerMin = 0;
-            long throttleSleepDelay = DateUtils.MILLIS_PER_MINUTE/throttleLimitPerMin;
+            int consumedMessageCount = 0;
+            long throttleSleepDelay = DateUtils.MILLIS_PER_MINUTE/throttleDuration;
             long consumptionStartedTime = 0;
 
             if (log.isDebugEnabled()) {
@@ -480,7 +482,7 @@ public class ServiceTaskManager {
                     try {
                         if (transactionality == BaseConstants.TRANSACTION_JTA) {
                             ut = getUserTransaction();
-                            // We will only create a new tx if there is no tx alive 
+                            // We will only create a new tx if there is no tx alive
                             if (ut.getStatus() == Status.STATUS_NO_TRANSACTION) {
                                 ut.begin();
                             }
@@ -548,7 +550,7 @@ public class ServiceTaskManager {
                                 }
 
                                 case JMSConstants.JMS_PROXY_BATCH_THROTTLE: {
-                                    if (consumedMessageCountPerMin == 0) {
+                                    if (consumedMessageCount == 0) {
                                         consumptionStartedTime = System.currentTimeMillis();
                                         if (log.isDebugEnabled()) {
                                             log.debug("Batch throttling started at " + consumptionStartedTime
@@ -556,25 +558,8 @@ public class ServiceTaskManager {
                                         }
                                     }
 
-                                    consumedMessageCountPerMin = consumedMessageCountPerMin + 1;
-
-                                    if (consumedMessageCountPerMin == throttleLimitPerMin) {
-                                        long consumptionDuration = System.currentTimeMillis() - consumptionStartedTime;
-
-                                        if (consumptionDuration < DateUtils.MILLIS_PER_MINUTE) {
-                                            long sleepDuration = DateUtils.MILLIS_PER_MINUTE - consumptionDuration;
-                                            Thread.sleep(sleepDuration);
-                                            if (log.isDebugEnabled()) {
-                                                log.debug("After consuming " + consumedMessageCountPerMin
-                                                        + " per minute, Thread is sleeping for "
-                                                        + sleepDuration + " milli seconds");
-                                            }
-                                        }
-                                        consumedMessageCountPerMin = 0;
-                                    }
-                                    if (log.isDebugEnabled()) {
-                                        log.debug("consumed Message Count per min:  " + consumedMessageCountPerMin);
-                                    }
+                                    consumedMessageCount = consumedMessageCount + 1; //Iterate for every message that is consumed
+                                    batchThrottle(consumedMessageCount, consumptionStartedTime);
                                     break;
                                 }
 
@@ -594,7 +579,7 @@ public class ServiceTaskManager {
                 log.error("Error receiving the message.", e);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
-                log.error("Error in sleeping with Fixed-Interval throttling", e);
+                log.error("Error in sleeping with " + throttleMode + " throttling", e);
             } finally {
                 log.info("JMS Polling server task stopped for service " + serviceName + " " + this);
                 if (log.isTraceEnabled()) {
@@ -1100,6 +1085,37 @@ public class ServiceTaskManager {
                     ", connectionReceivedError=" + connectionReceivedError +
                     '}';
         }
+
+        /**
+         * Initiate Batch Throttling
+         * @param consumedMessageCount number of messages that have been consumed
+         * @param consumptionStartedTime time when the consumtion of messages started
+         * @throws InterruptedException
+         */
+        private void batchThrottle(int consumedMessageCount, long consumptionStartedTime) throws InterruptedException {
+            if (consumedMessageCount >= throttleDuration) {
+                long consumptionDuration = System.currentTimeMillis() - consumptionStartedTime;
+
+                if (consumptionDuration < throttleDuration) {
+                    long sleepDuration = throttleDuration - consumptionDuration;
+                    Thread.sleep(sleepDuration);
+                    if (log.isDebugEnabled()) {
+                        log.debug("After consuming " + consumedMessageCount
+                                + " per minute, Thread is sleeping for "
+                                + sleepDuration + " milli seconds");
+                    }
+                } else {
+                    log.error("Consumption duration of " + consumedMessageCount
+                            + " messages has exceeded the throttle duration of " + throttleDuration + "milliseconds."
+                            + " Please increase the value of the throttle duration");
+                }
+                consumedMessageCount = 0;
+            }
+            if (log.isDebugEnabled()) {
+                log.debug("consumed Message Count per min:  " + consumedMessageCount);
+            }
+
+        }
     }
 
     /**
@@ -1603,21 +1619,40 @@ public class ServiceTaskManager {
     }
 
     /**
-     * Get the limit limitPerMinute for Throttling
+     * Get the Throttling Message Limit
      *
-     * @return limitPerMinute
+     * @return throttleMessageLimit
      */
-    public int getThrottleLimitPerMin() {
-        return throttleLimitPerMin;
+    public int getThrottleMessageLimit() {
+        return throttleMessageLimit;
     }
 
     /**
-     * Set the ThrottleLimitPerMin based on the limitPerMin value
+     * Set the ThrottleMessageLimit based on the throttleMessageLimit value
      *
-     * @param throttleLimitPerMin which is the limit of messages to be throttled per minute
+     * @param throttleMessageLimit which is the limit of messages to be throttled
      */
-    public void setThrottleLimitPerMin(int throttleLimitPerMin) {
-        this.throttleLimitPerMin = throttleLimitPerMin;
-        log.info("Throttle limit per minute for the service " + serviceName + " is " + throttleLimitPerMin);
+    public void setThrottleMessageLimit(int throttleMessageLimit) {
+        this.throttleMessageLimit = throttleMessageLimit;
+        log.info("Throttle Message Limit for the service " + serviceName + " is " + throttleMessageLimit);
+    }
+
+    /**
+     * Get the Throttle duration
+     *
+     * @return throttleDuration
+     */
+    public long getThrottleDuration() {
+        return throttleDuration;
+    }
+
+    /**
+     * Set the Throttle duration based on the throttleDuration value
+     *
+     * @param throttleDuration which is the duration over which the messages are throttled
+     */
+    public void setThrottleDuration(long throttleDuration) {
+        this.throttleDuration = throttleDuration;
+        log.info("Throttle duration for the service " + serviceName + " is " + throttleDuration);
     }
 }

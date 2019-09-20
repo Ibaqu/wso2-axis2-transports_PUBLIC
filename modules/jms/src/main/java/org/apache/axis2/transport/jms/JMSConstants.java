@@ -422,11 +422,13 @@ public class JMSConstants {
     public static final String JMS_PROXY_THROTTLE_ENABLED = "jms.proxy.throttle.enabled";
     /** Throttling mode specified */
     public static final String JMS_PROXY_THROTTLE_MODE = "jms.proxy.throttle.mode";
-    /** Throttling limit of messages per minute */
-    public static final String JMS_PROXY_THROTTLE_PER_MIN = "jms.proxy.throttle.limitPerMinute";
+    /** Throttling limit of messages */
+    public static final String JMS_PROXY_THROTTLE_MESSAGE_LIMIT = "jms.proxy.throttle.messageLimit";
+    /** Throttling duration */
+    public static final String JMS_PROXY_THROTTLE_DURATION = "jms.proxy.throttle.duration";
     /** Batch Throttling constant */
     public static final String JMS_PROXY_BATCH_THROTTLE = "batch";
-    /** Fixed Interval Throttlinh constant */
+    /** Fixed Interval Throttling constant */
     public static final String JMS_PROXY_FIXED_INTERVAL_THROTTLE = "fixed-interval";
 
 }
